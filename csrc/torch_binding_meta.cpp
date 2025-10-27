@@ -69,6 +69,31 @@ std::tuple<at::Tensor, at::Tensor> get_masked_input_and_mask_meta(
     return {masked_input, mask};
 }
 
+std::tuple<at::Tensor, at::Tensor> dispatch_gmm_combine_decode_meta(const at::Tensor &x, const at::Tensor &expert_ids,
+                                            const at::Tensor &gmm1_permuted_weight,
+                                            const at::Tensor &gmm1_permuted_weight_scale,
+                                            const at::Tensor &gmm2_weight, const at::Tensor &gmm2_weight_scale,
+                                            const at::Tensor &expert_smooth_scales_optional,
+                                            const at::Tensor &expert_scales_optional,
+                                            c10::string_view hcom_ep_name,
+                                            int64_t num_ranks, int64_t rank, int64_t moe_expert_num,
+                                            int64_t shared_expert_num, int64_t shared_expert_rank_num,
+                                            int64_t quant_mode, int64_t global_bs)
+{
+    auto x_shape = x.sizes();
+    auto experts_shape = expert_ids.sizes();
+    int h = x_shape[1];
+    int bs = experts_shape[0];
+
+    at::Tensor output = at::empty({bs, h}, x.options().device(at::kMeta));
+
+    bool is_shared_expert = (rank < shared_expert_rank_num);
+    int64_t num_local_experts = is_shared_expert ? 1 : moe_expert_num / (num_ranks - shared_expert_rank_num);
+    at::Tensor ep_recv_count = at::empty({num_local_experts * num_ranks}, expert_ids.options().device(at::kMeta));
+
+    return {output, ep_recv_count};
+}
+
 at::Tensor bgmv_expand_meta(at::Tensor &x, at::Tensor &weight, at::Tensor &indices, at::Tensor &y,
                        int64_t slice_offset, int64_t slice_size) {
     at::Tensor y_out = at::empty_like(y);
@@ -114,14 +139,34 @@ std::tuple<at::Tensor &, at::Tensor &, at::Tensor &, at::Tensor &> mla_preproces
     return {q_out0, kv_cache_out0, q_out1, kv_cache_out1};
 }
 
+std::tuple<at::Tensor, at::Tensor, at::Tensor> grouped_matmul_swiglu_quant_weight_nz_tensor_list_meta(
+    const at::Tensor & x,
+    const at::TensorList & weight,
+    const at::TensorList & weight_scale,
+    const at::Tensor & x_scale,
+    const at::Tensor & group_list,
+    const c10::optional<at::Tensor> & bias,
+    const c10::optional<at::Tensor> & offset)
+{
+    auto x_size = x.sizes();
+    int n = weight[0].sizes()[1];
+    int m = x_size[0];
+    int k = x_size[1];
+
+    at::Tensor output = at::zeros({m, n/2}, c10::dtype(c10::ScalarType::Char));
+    at::Tensor output_scale = at::zeros({m}, c10::dtype(c10::ScalarType::Float));
+    at::Tensor output_offset = at::zeros({m}, c10::dtype(c10::ScalarType::Float));
+
+    return std::tuple<at::Tensor, at::Tensor, at::Tensor>(output, output_scale, output_offset);
+}
 
 } // namespace meta
 } // namespace vllm_ascend
 
 namespace {
-  // Register the meta implementations of the custom kernels for symbolic tracing, this will also
-  // the custom kernel been captured into aclgraph
-  TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
+// Register the meta implementations of the custom kernels for symbolic tracing, this will also
+// the custom kernel been captured into aclgraph
+TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     // Rotary embedding meta implementation
     ops.impl("rotary_embedding", &vllm_ascend::meta::rotary_embedding_meta);
     // Masked input and mask meta implementation
@@ -132,5 +177,9 @@ namespace {
     ops.impl("sgmv_expand", &vllm_ascend::meta::sgmv_expand_meta);
     // MLA preprocess
     ops.impl("mla_preprocess", &vllm_ascend::meta::mla_preprocess);
+    // Grouped matmul swiglu quant weight nz tensor list
+    ops.impl("grouped_matmul_swiglu_quant_weight_nz_tensor_list", &vllm_ascend::meta::grouped_matmul_swiglu_quant_weight_nz_tensor_list_meta);
+    // Masked dispatch_gmm_combine_decode_meta meta implementation
+    ops.impl("dispatch_gmm_combine_decode", &vllm_ascend::meta::dispatch_gmm_combine_decode_meta);
 }
 }
