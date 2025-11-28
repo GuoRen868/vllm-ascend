@@ -17,13 +17,11 @@
 #include "tiling/platform/platform_ascendc.h"
 #include "tiling/hccl/hccl_tiling.h"
 
-#define GM_ALIGN_SIZE 512
-#define ENABLE_TILING_CHECK
-
 using namespace ge;
 namespace {
 constexpr uint32_t OP_TYPE_ALL_TO_ALL = 8;
 constexpr uint32_t SYSTEM_NEED_WORKSPACE = 16 * 1024 * 1024;
+constexpr uint32_t GM_ALIGN_SIZE = 512;
 constexpr uint32_t TOKEN_DTYPE_BYTE_SIZE = 2;
 constexpr uint32_t USE_CORE_NUM = 24;
 constexpr uint32_t L1_TILE_BYTE_SIZE = 32 * 1024;
