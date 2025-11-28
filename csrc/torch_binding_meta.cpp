@@ -35,7 +35,7 @@
 
 namespace vllm_ascend {
 namespace meta {
-
+const int64_t INT4_NUMS_IN_INT32 = 8;
 std::tuple<at::Tensor, at::Tensor> rotary_embedding_meta(
   at::Tensor &positions,
   at::Tensor &query,
@@ -159,6 +159,22 @@ std::tuple<at::Tensor, at::Tensor, at::Tensor> grouped_matmul_swiglu_quant_weigh
 
     return std::tuple<at::Tensor, at::Tensor, at::Tensor>(output, output_scale, output_offset);
 }
+std::tuple<at::Tensor, at::Tensor, at::Tensor> grouped_matmul_swiglu_quant(
+    const at::Tensor &x, const at::Tensor &weight, const at::Tensor &weight_scale, const at::Tensor &x_scale,
+    const at::Tensor &group_list, const c10::optional<at::Tensor> &bias, const c10::optional<at::Tensor> &offset)
+{
+    int m = x.sizes()[0];
+    int n = weight.sizes()[2];
+    bool is_a8w4 = x.dtype() == at::kChar && weight.dtype() == at::kInt;
+    if (is_a8w4) {
+        n *= INT4_NUMS_IN_INT32;
+    }
+    at::Tensor output = at::empty({m, n/2}, x.options().dtype(c10::ScalarType::Char));
+    at::Tensor output_scale = at::empty({m}, x.options().dtype(c10::ScalarType::Float));
+    at::Tensor output_offset = at::empty({}, x.options().dtype(c10::ScalarType::Float));
+    return {output, output_scale, output_offset};
+}
+
 
 } // namespace meta
 } // namespace vllm_ascend
@@ -181,5 +197,7 @@ TORCH_LIBRARY_IMPL_EXPAND(CONCAT(_C, _ascend), Meta, ops) {
     ops.impl("grouped_matmul_swiglu_quant_weight_nz_tensor_list", &vllm_ascend::meta::grouped_matmul_swiglu_quant_weight_nz_tensor_list_meta);
     // Masked dispatch_gmm_combine_decode_meta meta implementation
     ops.impl("dispatch_gmm_combine_decode", &vllm_ascend::meta::dispatch_gmm_combine_decode_meta);
+    // grouped_matmul_swiglu_quant meta implementation
+    ops.impl("grouped_matmul_swiglu_quant", &vllm_ascend::meta::grouped_matmul_swiglu_quant);
 }
 }
