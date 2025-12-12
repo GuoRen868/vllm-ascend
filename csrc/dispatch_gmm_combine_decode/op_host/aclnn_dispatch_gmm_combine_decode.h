@@ -25,6 +25,7 @@ __attribute__((visibility("default"))) aclnnStatus aclnnDispatchGmmCombineDecode
     const aclTensor *gmm2WeightScale,
     const aclTensor *expertSmoothScalesOptional,
     const aclTensor *expertScalesOptional,
+    const aclTensor *xActiveMaskOptional,
     char *groupEp,
     int64_t epRankSize,
     int64_t epRankId,

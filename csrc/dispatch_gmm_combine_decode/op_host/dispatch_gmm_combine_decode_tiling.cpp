@@ -37,6 +37,7 @@ constexpr uint32_t INPUT_GMM2_WEIGHT_INDEX = 4;
 constexpr uint32_t INPUT_GMM2_WEIGHT_SCALE_INDEX = 5;
 constexpr uint32_t INPUT_SMOOTH_SCALE_INDEX = 6;
 constexpr uint32_t INPUT_EXPERT_SCALE_INDEX = 7;
+constexpr uint32_t INPUT_X_ACTIVE_MASK_INDEX = 8;
 
 constexpr uint32_t ATTR_GROUP_EP_INDEX = 0;
 constexpr uint32_t ATTR_EP_RANK_SIZE_INDEX = 1;
@@ -301,6 +302,8 @@ static ge::graphStatus DispatchGmmCombineDecodeTilingFuncImpl(gert::TilingContex
     OPS_ERR_IF(gmm1WeightStorageShape == nullptr, OPS_LOG_E(nodeName, "gmm1Weight shape is null."),
                     return ge::GRAPH_FAILED);
     tilingData->disGmmDeqSwigluQuantGmmDeqComInfo.gmm1HLen = gmm1WeightStorageShape->GetOriginShape().GetDim(TWO_DIMS);
+    const gert::StorageShape* xActiveMaskStorageShape = context->GetOptionalInputShape(INPUT_X_ACTIVE_MASK_INDEX);
+    bool xActiveMaskEnable = (xActiveMaskStorageShape != nullptr);
     auto ascendcPlatform = platform_ascendc::PlatformAscendC(context->GetPlatformInfo());
     uint32_t aicNum = ascendcPlatform.GetCoreNumAic();
     uint32_t aivNum = ascendcPlatform.GetCoreNumAiv();
@@ -311,10 +314,15 @@ static ge::graphStatus DispatchGmmCombineDecodeTilingFuncImpl(gert::TilingContex
     OPS_ERR_IF(SetWorkSpace(context, nodeName, *tilingData) != ge::GRAPH_SUCCESS,
                     OPS_LOG_E(nodeName, "Tiling set workspace failed."), return ge::GRAPH_FAILED);
     SetHcommCfg(context, tilingData, groupEp);
+    uint64_t tilingKey = 0;
     if (tilingData->disGmmDeqSwigluQuantGmmDeqComInfo.moeExpertNumPerRank == 1) {
-        context->SetTilingKey(0);
+        context->SetTilingKey(tilingKey);
     } else {
-        context->SetTilingKey(EXEC_FLAG_DEEP_FUSE);
+        tilingKey |= EXEC_FLAG_DEEP_FUSE;
+        if (xActiveMaskEnable) {
+            tilingKey |= EXEC_FLAG_X_ACTIVE_MASK;
+        }
+        context->SetTilingKey(tilingKey);
     }
     context->SetBlockDim(aicNum);
     return ge::GRAPH_SUCCESS;

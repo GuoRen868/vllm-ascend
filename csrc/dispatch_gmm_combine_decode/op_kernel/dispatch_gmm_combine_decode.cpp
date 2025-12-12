@@ -15,6 +15,7 @@ extern "C" __global__ __aicore__ void dispatch_gmm_combine_decode(
     // input
     GM_ADDR x, GM_ADDR expert_ids, GM_ADDR gmm1_permuted_weight, GM_ADDR gmm1_permuted_weight_scale,
     GM_ADDR gmm2_weight, GM_ADDR gmm2_weight_scale, GM_ADDR expert_smooth_scales, GM_ADDR expert_scales,
+    GM_ADDR x_active_mask,
     // output
     GM_ADDR output, GM_ADDR outputRecvCount,
     // system
@@ -27,7 +28,7 @@ extern "C" __global__ __aicore__ void dispatch_gmm_combine_decode(
     if constexpr (TILING_KEY_IS(0) || TILING_KEY_IS(1)) {
         DispatchGmmCombineDecode<DTYPE_X, int32_t, false, TILING_KEY_VAR> op;
         op.Init(x, expert_ids, gmm1_permuted_weight, gmm1_permuted_weight_scale, gmm2_weight, gmm2_weight_scale,
-                expert_smooth_scales, expert_scales, output, outputRecvCount, workspace, nullptr, &tiling_data);
+                expert_smooth_scales, expert_scales, x_active_mask, output, outputRecvCount, workspace, nullptr, &tiling_data);
         op.Process();
     }
 }
