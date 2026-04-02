@@ -121,6 +121,7 @@ class CAMP2PAFDConnector(AFDConnectorBase):
         self.hccl_comm_name = self.hccl_comm_name_list[0]
         self.hccl_comm_name2 = self.hccl_comm_name_list[1] if num_ubatches > 1 else self.hccl_comm_name
         self.hccl_comm_name3 = self.hccl_comm_name_list[2] if num_ubatches > 2 else None
+        self.prof_tensor = torch.zeros(24, 7168, dtype=torch.int32, device='npu')
 
         if self.rank < self.ffn_size:
             self.afd_pg1 = init_afd_process_group(
@@ -168,6 +169,12 @@ class CAMP2PAFDConnector(AFDConnectorBase):
         logger.info("m2n connector initialized")
 
         self._initialized = True
+
+    def save_tensor(self) -> None:
+        if self.rank < self.ffn_size:
+            torch_npu.npu.synchronize()
+            print(f"##DEBUG## ffn save prof tensor")
+            torch.save(self.prof_tensor, './prof_tensor.pt')
 
     def is_initialized(self) -> bool:
         """Check if the connector is initialized and ready to use.
@@ -317,6 +324,7 @@ class CAMP2PAFDConnector(AFDConnectorBase):
 
         groupEp = _get_group_ep(ubatch_idx, self.hccl_comm_name, self.hccl_comm_name2, self.hccl_comm_name3)
         torch.ops.umdk_cam_op_lib.e2a(expand_x=ffn_output, atten_batch_size=handle[4],
+                                      prof_tensor = self.prof_tensor,
                                       batch_size=batch_size, hidden_size=h, topk=k,
                                       expert_rank_size=self.ffn_size, attention_rank_size=self.attn_size,
                                       rank=self.rank, group_ep=groupEp,
@@ -343,6 +351,7 @@ class CAMP2PAFDConnector(AFDConnectorBase):
         outputs = torch.ops.umdk_cam_op_lib.a2e(x=torch.tensor([], dtype=torch.bfloat16, device='npu'),
                                                 expert_ids=torch.tensor([], dtype=torch.int32, device='npu'),
                                                 scales=torch.tensor([], dtype=torch.float, device='npu'),
+                                                prof_tensor = None,
                                                 batch_size=batch_size, hidden_size=h, topk=k,
                                                 expert_rank_size=self.ffn_size, atten_rank_size=self.attn_size,
                                                 rank=self.rank, group_ep=groupEp,
@@ -643,6 +652,7 @@ def cam_send_attn_output_impl(hidden_states: torch.Tensor,
     with npu_stream_switch_within_graph(curr_stream, comm_stream, multistream_enable):
         handle_out = torch.ops.umdk_cam_op_lib.a2e(x=hidden_states, expert_ids=topk_idx,
                                                 scales=topk_weights,
+                                                prof_tensor = None,
                                                 batch_size=batch_size, hidden_size=h, topk=k,
                                                 expert_rank_size=ffn_size, atten_rank_size=attn_size,
                                                 rank=rank, group_ep=groupEp,
@@ -701,6 +711,7 @@ def cam_recv_ffn_output_impl(hidden_states: torch.Tensor,
         curr_stream = torch.npu.current_stream()
         comm_event.wait(curr_stream)
     output2 = torch.ops.umdk_cam_op_lib.e2a(expand_x=hidden_states, atten_batch_size=handle[3],
+                                            prof_tensor = None,
                                             batch_size=batch_size, hidden_size=h, topk=k,
                                             expert_rank_size=ffn_size, attention_rank_size=attn_size,
                                             rank=rank, group_ep=groupEp,

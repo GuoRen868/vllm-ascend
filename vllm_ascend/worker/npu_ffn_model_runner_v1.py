@@ -93,6 +93,7 @@ class NPUFFNModelRunner(NPUModelRunner,GPUFFNModelRunner):
             self.num_layers = self.model_config.hf_config.num_hidden_layers
         self.dummy_run_call_cnt = 0
         self.replay_cnt = 0
+        self.prof_cnt = 0
         self.topk = self.model_config.hf_config.num_experts_per_tok
         self.n_routed_experts = self.model_config.hf_config.n_routed_experts
         self.hidden_size = self.model_config.hf_config.hidden_size
@@ -167,6 +168,10 @@ class NPUFFNModelRunner(NPUModelRunner,GPUFFNModelRunner):
                     self.replay_cnt += 1
                     logger.debug(f"ffn replay, replay_cnt is {self.replay_cnt}, dp_metadata_key={dp_metadata_key}")
                 else:
+                    self.prof_cnt += 1
+                    if self.prof_cnt == 100 :
+                        print(f"##DEBUG## ffn start save")
+                        self.connector.save_tensor()
                     # fallback to eager mode
                     logger.warning(f"No acl graph found for dp_metadata_key={dp_metadata_key}, fallback to eager")
                     self._ffn_forward(aclgraph_runtime_mode=CUDAGraphMode.NONE, dp_metadata_list=dp_metadata_list)
